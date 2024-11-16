@@ -189,6 +189,7 @@ public class Server
     public void JoinLobby(Client client)
     {
         MainLobby.Members.Add(client);
+        Console.WriteLine("MEMBER COUNT: " + MainLobby.Members.Count);
         PacketSender.Instance.Members(MainLobby.Members);
     }
 
