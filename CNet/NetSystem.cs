@@ -827,6 +827,7 @@ namespace CNet
         {
             while (!mainCancelTokenSource.IsCancellationRequested)
             {
+                Console.WriteLine("Receiving UDP packets");
                 byte[] buffer = packetPool.Rent(UDP.BufferSize);
                 try
                 {
