@@ -395,6 +395,8 @@ namespace CNet
                                     throw new Exception("Failed to add NetEndPoint to connectionsUDP");
                                 }
 
+                                Console.WriteLine("Accepted connection from " + connectionsUDP[remoteEP.UDPEndPoint].TCPEndPoint.ToString());
+
                                 beginReceiveQueue.Enqueue(remoteEP);
                                 ConnectOnMainThread(remoteEP);
                             }
@@ -881,7 +883,6 @@ namespace CNet
                 {
                     continue;
                 }
-                Console.WriteLine("Receiving UDP packets 3");
 
                 // If the received data is from a currently connected end point
                 if (connectionsUDP.TryGetValue((IPEndPoint)remoteEndPoint, out remoteEP))
