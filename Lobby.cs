@@ -1,4 +1,4 @@
-using CNet;
+using LiteNetLib;
 
 namespace SpaceJam2024_Server;
 

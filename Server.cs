@@ -1,30 +1,24 @@
+using System.Net;
 using System.Net.Sockets;
-using CNet;
+using LiteNetLib;
+using LiteNetLib.Utils;
 
 namespace SpaceJam2024_Server;
 
-public class Server : IEventNetListener
+public class Server
 {
     public static Server Instance { get; } = new Server();
 
     public const int POLL_RATE = 15;
 
-    public delegate void PacketHandler(Client client, NetPacket packet);
+    public delegate void PacketHandler(Client client, Packet packet);
 
-    public string Address
-    {
-        get { return Listener.Address; }
-        set { Listener.Address = value; }
-    }
+    public int Port { get; set; }
+    public string ConnectionKey { get; set; }
 
-    public int Port
-    {
-        get { return Listener.Port; }
-        set { Listener.Port = value; }
-    }
-
-    public NetListener Listener { get; }
-    public Dictionary<NetEndPoint, Client> Clients { get; }
+    private EventBasedNetListener listener;
+    public NetManager Listener { get; }
+    public Dictionary<NetPeer, Client> Clients { get; }
     public Lobby MainLobby { get; }
 
     private Dictionary<ServiceReceiveType, PacketHandler> packetHandlers;
@@ -32,31 +26,38 @@ public class Server : IEventNetListener
 
     private Server()
     {
-        Listener = new NetListener();
-        Listener.RegisterInterface(this);
+        listener = new EventBasedNetListener();
+        listener.ConnectionRequestEvent += OnConnectionRequest;
+        listener.PeerConnectedEvent += OnPeerConnected;
+        listener.PeerDisconnectedEvent += OnPeerDisconnected;
+        listener.NetworkReceiveEvent += OnNetworkReceive;
+        listener.NetworkErrorEvent += OnNetworkError;
 
-        Clients = new Dictionary<NetEndPoint, Client>();
+        Listener = new NetManager(listener);
+
+        Clients = new Dictionary<NetPeer, Client>();
         MainLobby = new Lobby();
         packetHandlers = new Dictionary<ServiceReceiveType, PacketHandler>()
         {
-            { ServiceReceiveType.Name, PacketReceiver.Instance.Name }
+            { ServiceReceiveType.Name, PacketReceiver.Instance.Name },
+            { ServiceReceiveType.JoinLobby, PacketReceiver.Instance.JoinLobby }
         };
 
         running = false;
     }
 
-    public void Start(string address, int port)
+    public void Start(int port, string connectionKey)
     {
         Console.WriteLine("Starting Server...");
-        Address = address;
         Port = port;
-        Listener.Listen();
+        ConnectionKey = connectionKey;
+        Listener.Start(IPAddress.Any, IPAddress.IPv6Any, port);
         running = true;
         Console.WriteLine("Server Started, waiting for connections...");
 
         while (running && (Console.IsOutputRedirected || !Console.KeyAvailable))
         {
-            Listener.Update();
+            Listener.PollEvents();
             Thread.Sleep(POLL_RATE);
         }
 
@@ -71,125 +72,105 @@ public class Server : IEventNetListener
     public void Close()
     {
         Console.WriteLine("Closing Server...");
-        Listener.Close(true);
+        Listener.DisconnectAll();
+        Listener.Stop();
     }
 
-    public void OnConnectionRequest(NetRequest request)
+    public void OnConnectionRequest(ConnectionRequest request)
     {
-        Console.WriteLine("Connection Request from: " + request.ClientEndPoint.ToString());
-        request.Accept();
+        Console.WriteLine("Connection Request from " + request.RemoteEndPoint.ToString());
+        request.AcceptIfKey(ConnectionKey);
     }
 
-    public void OnClientConnected(NetEndPoint remoteEndPoint)
+    public void OnPeerConnected(NetPeer peer)
     {
-        Console.WriteLine("Client " + remoteEndPoint.TCPEndPoint.ToString() + " Connected");
-        var client = new Client(Guid.NewGuid(), remoteEndPoint);
-        Clients.Add(remoteEndPoint, client);
+        Console.WriteLine("Client " + peer.ToString() + " Connected");
+        var client = new Client(Guid.NewGuid(), peer);
+        Clients.Add(peer, client);
         PacketSender.Instance.ID(client, client.ID);
         Console.WriteLine("Number of Clients Online: " + Clients.Count);
     }
 
-    public void OnClientDisconnected(NetEndPoint remoteEndPoint, NetDisconnect disconnect)
+    public void OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
     {
-        Console.Write("Client " + remoteEndPoint.TCPEndPoint.ToString() + " Disconnected: " + disconnect.DisconnectCode.ToString());
-        try
-        {
-            if (disconnect.DisconnectCode == DisconnectCode.ConnectionClosedWithMessage)
-            {
-                Console.WriteLine(" (" + disconnect.DisconnectData.ReadString() + ")");
-            }
-            else
-            {
-                Console.WriteLine();
-            }
-        }
-        catch (Exception e)
-        {
-            Console.Error.WriteLine("Error while reading disconnect data: " + e.Message);
-        }
+        Console.WriteLine("Client " + peer.ToString() + " Disconnected: " + disconnectInfo.Reason.ToString());
 
-        if (Clients.ContainsKey(remoteEndPoint))
+        if (Clients.ContainsKey(peer))
         {
-            if (Clients[remoteEndPoint].IsMember)
+            if (Clients[peer].IsMember)
             {
-                var client = Clients[remoteEndPoint];
+                var client = Clients[peer];
                 LeaveLobby(client);
             }
 
-            Clients.Remove(remoteEndPoint);
+            Clients.Remove(peer);
         }
 
         Console.WriteLine("Number of Clients Online: " + Clients.Count);
     }
 
-    public void OnPacketReceived(NetEndPoint remoteEndPoint, NetPacket packet, PacketProtocol protocol)
+    public void OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channelNumber, DeliveryMethod deliveryMethod)
     {
-        if (packet.Length < 2)
+        byte[] data = new byte[reader.AvailableBytes];
+        reader.GetBytes(data, reader.AvailableBytes);
+        Packet packet = new Packet(data);
+        // Why this has to exist, I don't know. But it needs to be here (this is why CNet is better).
+        int length = packet.ReadInt();
+
+        if (packet.Length < (sizeof(short) + sizeof(short)))
         {
-            Console.Error.WriteLine("Invalid Packet Received from " + remoteEndPoint.TCPEndPoint.ToString());
+            Console.Error.WriteLine("Client " + peer.ToString() + " sent too short of a packet");
             return;
         }
 
-        // Check if the packet is a command packet (they all start with -1)
+        // Check if the packet is a command packet (they all start with 0)
         if (packet.ReadShort() == -1)
         {
-            if (protocol == PacketProtocol.TCP)
+            ServiceReceiveType command = (ServiceReceiveType)packet.ReadShort();
+            Console.WriteLine("Received Command: " + command.ToString() + " from " + peer.ToString());
+            if (packetHandlers.TryGetValue(command, out PacketHandler? handler))
             {
-                ServiceReceiveType command = (ServiceReceiveType)packet.ReadShort();
-                if (packetHandlers.TryGetValue(command, out PacketHandler? handler))
-                {
-                    Console.WriteLine("Received Command: " + command.ToString() + " from " + remoteEndPoint.TCPEndPoint.ToString());
-                    handler(Clients[remoteEndPoint], packet);
-                }
-                else
-                {
-                    Console.Error.WriteLine("Invalid Command Received from " + remoteEndPoint.TCPEndPoint.ToString());
-                }
+                handler(Clients[peer], packet);
             }
             else
             {
-                Console.Error.WriteLine("Client " + remoteEndPoint.TCPEndPoint.ToString() + " send command packet using UDP");
+                Console.Error.WriteLine("Invalid Command Received from " + peer.ToString());
             }
         }
         else
         {
-            packet.CurrentIndex -= 2;
-
-            if (Clients[remoteEndPoint].IsMember)
+            if (Clients[peer].IsMember)
             {
-                var client = Clients[remoteEndPoint];
-                Send(MainLobby.GetMembersExcept(client), packet, protocol);
+                packet.CurrentIndex -= 2;
+                // Need to remove the length of the packet from the start of the packet, because it will get re-inserted when sending
+                packet.Remove(0, sizeof(int));
+
+                var client = Clients[peer];
+                Send(MainLobby.GetMembersExcept(client), packet, deliveryMethod);
             }
             else
             {
-                Console.Error.WriteLine("Client " + remoteEndPoint.TCPEndPoint.ToString() + " is not a member of the lobby.");
+                Console.Error.WriteLine("Client " + peer.ToString() + " is not a member of the lobby.");
             }
         }
     }
 
-    public void OnNetworkError(NetEndPoint? remoteEndPoint, SocketException socketException)
+    public void OnNetworkError(IPEndPoint endPoint, SocketError socketError)
     {
-        if (remoteEndPoint != null)
-        {
-            Console.Error.WriteLine("Network Error from " + remoteEndPoint.TCPEndPoint.ToString() + ": " + socketException.SocketErrorCode.ToString());
-        }
-        else
-        {
-            Console.Error.WriteLine("Network Error: " + socketException.SocketErrorCode.ToString());
-        }
+        Console.Error.WriteLine("Network Error from " + endPoint + ": " + socketError.ToString());
     }
 
-    public void Send(Client client, NetPacket packet, PacketProtocol protocol)
+    public void Send(Client client, Packet packet, DeliveryMethod method)
     {
         try
         {
             if (packet.ReadShort() == -1)
             {
-                Console.WriteLine("Sending Command Packet to " + client.RemoteEP.TCPEndPoint.ToString() + " of type " + (ServiceSendType)packet.ReadShort(false));
+                Console.WriteLine("Sending Command Packet to " + client.RemoteEP.ToString() + " of type " + (ServiceSendType)packet.ReadShort(false));
                 packet.CurrentIndex -= 2;
             }
 
-            client.RemoteEP.Send(packet, protocol);
+            client.RemoteEP.Send(packet.ByteArray, method);
         }
         catch (SocketException e)
         {
@@ -197,11 +178,11 @@ public class Server : IEventNetListener
         }
     }
 
-    public void Send(List<Client> clients, NetPacket packet, PacketProtocol protocol)
+    public void Send(List<Client> clients, Packet packet, DeliveryMethod method)
     {
         foreach (Client client in clients)
         {
-            Send(client, packet, protocol);
+            Send(client, packet, method);
         }
     }
 
@@ -219,34 +200,22 @@ public class Server : IEventNetListener
 
     static void Main(string[] args)
     {
-        string address;
-        int port;
-
-        if (args.Length == 0)
+        if (args.Length != 2)
         {
-            Console.WriteLine("No arguments passed, using default values...");
-            address = "127.0.0.1";
-            port = 7777;
-        }
-        else if (args.Length == 2)
-        {
-            address = args[0];
-            if (int.TryParse(args[1], out port))
-            {
-                Console.WriteLine("Passed Address: " + address + ":" + port + "\n");
-            }
-            else
-            {
-                Console.Error.WriteLine("Invalid Port: " + args[1]);
-                return;
-            }
-        }
-        else
-        {
-            Console.Error.WriteLine("Usage: Server <address> <port>");
+            Console.Error.WriteLine("Usage: Referrer <port> <connectionKey>");
             return;
         }
 
-        Server.Instance.Start(address, port);
+        string connectionKey = args[1];
+        if (int.TryParse(args[0], out int port))
+        {
+            Console.WriteLine("Passed Port: " + port);
+            Console.WriteLine("Passed Connection Key: " + connectionKey + "\n");
+            Server.Instance.Start(port, connectionKey);
+        }
+        else
+        {
+            Console.Error.WriteLine("Invalid Port");
+        }
     }
 }
