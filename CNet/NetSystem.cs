@@ -827,7 +827,6 @@ namespace CNet
         {
             while (!mainCancelTokenSource.IsCancellationRequested)
             {
-                Console.WriteLine("Receiving UDP packets");
                 byte[] buffer = packetPool.Rent(UDP.BufferSize);
                 try
                 {
@@ -876,8 +875,9 @@ namespace CNet
             while (!mainCancelTokenSource.IsCancellationRequested)
             {
                 EndPoint remoteEndPoint = new IPEndPoint(IPAddress.Any, 0);
+                Console.WriteLine("Receiving UDP packets");
                 var receivedBytes = udpSocket.ReceiveFrom(buffer, 0, buffer.Length, SocketFlags.None, ref remoteEndPoint);
-
+                Console.WriteLine("Receiving UDP packets 2");
                 // Disregard packet as it is too small
                 if (receivedBytes < 4)
                 {
