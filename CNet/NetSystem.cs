@@ -918,7 +918,6 @@ namespace CNet
                                 remoteEP = connection.Value;
                                 remoteEP.UDPEndPoint = (IPEndPoint)remoteEndPoint;
                                 connectionsUDP.TryAdd(remoteEP.UDPEndPoint, remoteEP);
-                                break;
                             }
                         }
                     }
