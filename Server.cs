@@ -196,6 +196,7 @@ public class Server
     public void LeaveLobby(Client client)
     {
         MainLobby.Members.Remove(client);
+        Console.WriteLine("MEMBER COUNT: " + MainLobby.Members.Count);
         PacketSender.Instance.Members(MainLobby.Members);
     }
 
