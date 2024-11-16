@@ -10,4 +10,5 @@ public enum ServiceSendType
 public enum ServiceReceiveType
 {
     Name = 0,
+    JoinLobby = 1
 }
