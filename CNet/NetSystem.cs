@@ -773,6 +773,7 @@ namespace CNet
                         // If the expected length of the packet is 0, this is a heartbeat packet
                         if (expectedLength == 0)
                         {
+                            Console.WriteLine("Received TCP heartbeat packet");
                             break;
                         }
                         else
@@ -916,6 +917,7 @@ namespace CNet
                     // If the expected length of the packet is 0, this is a heartbeat packet
                     if (expectedLength == 0)
                     {
+                        Console.WriteLine("Received UDP heartbeat packet");
                         break;
                     }
                     else
