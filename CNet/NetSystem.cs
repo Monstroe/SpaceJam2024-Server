@@ -160,7 +160,8 @@ namespace CNet
 
         private void InitFinalObjects()
         {
-            IPEndPoint ep = new IPEndPoint(Address == null ? IPAddress.Any : IPAddress.Parse(Address), Port);
+            //IPEndPoint ep = new IPEndPoint(Address == null ? IPAddress.Any : IPAddress.Parse(Address), Port);
+            IPEndPoint ep = new IPEndPoint(IPAddress.Any, Port);
 
             mainCancelTokenSource = new CancellationTokenSource();
 
