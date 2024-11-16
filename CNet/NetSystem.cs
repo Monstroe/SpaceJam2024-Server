@@ -896,10 +896,10 @@ namespace CNet
                 // This is a somewhat temporary solution to allow UDP packets to still work
                 if (expectedLength == 0 && !foundRemoteEP)
                 {
-                    Console.WriteLine("Received UDP heartbeat packet");
                     try
                     {
                         int tcpPort = receivedPacket.ReadShort();
+                        Console.WriteLine("Received UDP heartbeat packet: " + tcpPort);
                         if (tcpPort > 0 && tcpPort <= 65535)
                         {
                             IPEndPoint tcpEP = new IPEndPoint(((IPEndPoint)remoteEndPoint).Address, tcpPort);
