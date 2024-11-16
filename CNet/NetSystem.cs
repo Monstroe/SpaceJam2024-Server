@@ -15,12 +15,6 @@ namespace CNet
     /// </summary>
     public class NetSystem : IDisposable
     {
-        enum RequestStatus
-        {
-            Accept = 1,
-            Deny = 0
-        }
-
         public delegate void ConnectionRequestHandler(NetRequest request);
         public delegate void ConnectedHandler(NetEndPoint remoteEndPoint);
         public delegate void DisconnectedHandler(NetEndPoint remoteEndPoint, NetDisconnect disconnect);
@@ -245,7 +239,7 @@ namespace CNet
                         throw new Exception("Failed to add NetEndPoint to connectionsUDP");
                     }
                     var receivedPacket = await ReceiveTCPAsync(remoteEP, new CancellationTokenSource(NetConstants.DATA_RECEIVE_TIMEOUT), true);
-                    if (receivedPacket.ReadInt(false) == (int)RequestStatus.Accept)
+                    if (receivedPacket.ReadInt(false) != -1)
                     {
                         /*bool sentUDPPort = false;
                         using (NetPacket udpDataPacket = new NetPacket(this, PacketProtocol.TCP, 0))
@@ -280,7 +274,7 @@ namespace CNet
                     else
                     {
                         NetDisconnect disconnect;
-                        if (receivedPacket.ReadInt(false) == (int)RequestStatus.Deny)
+                        if (receivedPacket.ReadInt(false) == -1)
                         {
                             disconnect = new NetDisconnect(DisconnectCode.ConnectionRejected);
                         }
@@ -461,11 +455,9 @@ namespace CNet
         {
             using (NetPacket packet = new NetPacket(this, PacketProtocol.TCP, 0))
             {
-                packet.Write((int)RequestStatus.Accept);
                 int connectionID = GenerateConnectionID();
                 packet.Write(connectionID);
                 remoteEP.connectionID = connectionID;
-                Console.WriteLine("Connection ID: " + connectionID);
                 SendOnMainThread(remoteEP, packet, PacketProtocol.TCP, true);
             }
         }
@@ -488,7 +480,7 @@ namespace CNet
         {
             using (NetPacket packet = new NetPacket(this, PacketProtocol.TCP, 0))
             {
-                packet.Write((int)RequestStatus.Deny);
+                packet.Write(-1);
                 SendOnMainThread(remoteEP, packet, PacketProtocol.TCP, false);
                 DisconnectOnMainThread(remoteEP, new NetDisconnect(DisconnectCode.ConnectionRejected), false, false);
             }
@@ -918,7 +910,7 @@ namespace CNet
                     try
                     {
                         int connectionID = receivedPacket.ReadInt();
-                        Console.WriteLine("Received UDP packet: " + connectionID);
+                        Console.WriteLine("UDP: " + connectionID);
                         foreach (var connection in connectionsTCP)
                         {
                             if (connection.Value.connectionID == connectionID)
@@ -934,7 +926,7 @@ namespace CNet
                 }
 
                 // If the received data is from a currently connected end point
-                if (foundRemoteEP)
+                if (foundRemoteEP && remoteEP != null)
                 {
                     // Packets expected length was larger than the actual amount of bytes received
                     if (expectedLength > receivedBytes - 4)
@@ -966,7 +958,6 @@ namespace CNet
                     // If the expected length of the packet is 0, this is a heartbeat packet
                     if (expectedLength == 0)
                     {
-                        Console.WriteLine("Received heartbeat packet");
                         break;
                     }
                     else
@@ -1003,7 +994,6 @@ namespace CNet
                             using (NetPacket packet = new NetPacket(this, PacketProtocol.TCP, 0))
                             {
                                 packet.Write(0);
-                                packet.Write(remoteEP.connectionID);
                                 SendOnMainThread(remoteEP, packet, PacketProtocol.TCP, false);
                             }
                             remoteEP.tcpHearbeatInterval = 0;
@@ -1014,6 +1004,7 @@ namespace CNet
                             using (NetPacket packet = new NetPacket(this, PacketProtocol.UDP, 0))
                             {
                                 packet.Write(0);
+                                packet.Write(remoteEP.connectionID);
                                 SendOnMainThread(remoteEP, packet, PacketProtocol.UDP, false);
                             }
                             remoteEP.udpHearbeatInterval = 0;
