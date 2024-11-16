@@ -160,8 +160,7 @@ namespace CNet
 
         private void InitFinalObjects()
         {
-            //IPEndPoint ep = new IPEndPoint(Address == null ? IPAddress.Any : IPAddress.Parse(Address), Port);
-            IPEndPoint ep = new IPEndPoint(IPAddress.Any, Port);
+            IPEndPoint ep = new IPEndPoint(Address == null ? IPAddress.Any : IPAddress.Parse(Address), Port);
 
             mainCancelTokenSource = new CancellationTokenSource();
 
@@ -248,7 +247,7 @@ namespace CNet
                     var receivedPacket = await ReceiveTCPAsync(remoteEP, new CancellationTokenSource(NetConstants.DATA_RECEIVE_TIMEOUT), true);
                     if (receivedPacket.ReadInt(false) == (int)RequestStatus.Accept)
                     {
-                        bool sentUDPPort = false;
+                        /*bool sentUDPPort = false;
                         using (NetPacket udpDataPacket = new NetPacket(this, PacketProtocol.TCP, 0))
                         {
                             // This should never happen
@@ -270,7 +269,12 @@ namespace CNet
                         else
                         {
                             udpSocket.Close();
-                        }
+                        }*/
+
+                        systemConnected = true;
+                        ConnectOnMainThread(remoteEP);
+                        ReceivePackets();
+                        beginReceiveQueue.Enqueue(remoteEP);
                     }
                     else
                     {
@@ -377,7 +381,7 @@ namespace CNet
                     if (result)
                     {
                         SendRequestAccept(remoteEP);
-                        NetPacket udpPortData = await ReceiveTCPAsync(remoteEP, new CancellationTokenSource(NetConstants.DATA_RECEIVE_TIMEOUT), true);
+                        /*NetPacket udpPortData = await ReceiveTCPAsync(remoteEP, new CancellationTokenSource(NetConstants.DATA_RECEIVE_TIMEOUT), true);
                         try
                         {
                             int port = udpPortData.ReadInt();
@@ -395,9 +399,6 @@ namespace CNet
                                     throw new Exception("Failed to add NetEndPoint to connectionsUDP");
                                 }
 
-                                Console.WriteLine("Accepted connection from " + connectionsUDP[remoteEP.UDPEndPoint].UDPEndPoint.ToString());
-                                Console.WriteLine("Accepted connection 2 from " + remoteEP.UDPEndPoint);
-
                                 beginReceiveQueue.Enqueue(remoteEP);
                                 ConnectOnMainThread(remoteEP);
                             }
@@ -405,7 +406,10 @@ namespace CNet
                         catch (IndexOutOfRangeException)
                         {
                             DisconnectOnMainThread(remoteEP, new NetDisconnect(DisconnectCode.InvalidPacket), false, false);
-                        }
+                        }*/
+
+                        beginReceiveQueue.Enqueue(remoteEP);
+                        ConnectOnMainThread(remoteEP);
                     }
                     else
                     {
@@ -777,7 +781,6 @@ namespace CNet
                         // If the expected length of the packet is 0, this is a heartbeat packet
                         if (expectedLength == 0)
                         {
-                            Console.WriteLine("Received TCP heartbeat packet");
                             break;
                         }
                         else
@@ -879,24 +882,39 @@ namespace CNet
             {
                 EndPoint remoteEndPoint = new IPEndPoint(IPAddress.Any, 0);
                 var receivedBytes = udpSocket.ReceiveFrom(buffer, 0, buffer.Length, SocketFlags.None, ref remoteEndPoint);
+
                 // Disregard packet as it is too small
                 if (receivedBytes < 4)
                 {
                     continue;
                 }
 
-                Console.WriteLine("Receiving UDP packet: " + (IPEndPoint)remoteEndPoint);
-                foreach (var ep in connectionsUDP.Keys)
+                bool foundRemoteEP = connectionsUDP.TryGetValue((IPEndPoint)remoteEndPoint, out remoteEP);
+                int expectedLength = receivedPacket.ReadInt();
+
+                // This only happens when the packet is a heartbeat packet and the remote end point is not in the connectionsUDP dictionary
+                // This is a somewhat temporary solution to allow UDP packets to still work
+                if (expectedLength == 0 && !foundRemoteEP)
                 {
-                    Console.WriteLine("Receiving UDP packet 2: " + ep);
+                    Console.WriteLine("Received UDP heartbeat packet");
+                    try
+                    {
+                        int tcpPort = receivedPacket.ReadShort();
+                        if (tcpPort > 0 && tcpPort <= 65535)
+                        {
+                            IPEndPoint tcpEP = new IPEndPoint(((IPEndPoint)remoteEndPoint).Address, tcpPort);
+                            if (connectionsTCP.TryGetValue(tcpEP, out remoteEP))
+                            {
+                                remoteEP.UDPEndPoint = (IPEndPoint)remoteEndPoint;
+                            }
+                        }
+                    }
+                    catch (IndexOutOfRangeException) { }
                 }
 
                 // If the received data is from a currently connected end point
-                if (connectionsUDP.TryGetValue((IPEndPoint)remoteEndPoint, out remoteEP))
+                if (foundRemoteEP)
                 {
-                    Console.WriteLine("Receiving UDP packets 4");
-                    int expectedLength = receivedPacket.ReadInt();
-
                     // Packets expected length was larger than the actual amount of bytes received
                     if (expectedLength > receivedBytes - 4)
                     {
@@ -964,6 +982,7 @@ namespace CNet
                             using (NetPacket packet = new NetPacket(this, PacketProtocol.TCP, 0))
                             {
                                 packet.Write(0);
+                                packet.Write((short)remoteEP.TCPEndPoint.Port);
                                 SendOnMainThread(remoteEP, packet, PacketProtocol.TCP, false);
                             }
                             remoteEP.tcpHearbeatInterval = 0;
