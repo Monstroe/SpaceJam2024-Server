@@ -6,13 +6,13 @@ public class Client
 {
     public Guid ID { get; }
     public string Name { get; set; }
-    public NetPeer RemoteEP { get; }
+    public NetPeer RemotePeer { get; }
     public bool IsHost { get => Server.Instance.MainLobby.Host == this; }
     public bool IsMember { get => Server.Instance.MainLobby.Members.Contains(this); }
 
     public Client(Guid id, NetPeer remoteEP)
     {
         ID = id;
-        RemoteEP = remoteEP;
+        RemotePeer = remoteEP;
     }
 }

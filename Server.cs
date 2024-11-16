@@ -17,7 +17,7 @@ public class Server
     public string ConnectionKey { get; set; }
 
     private EventBasedNetListener listener;
-    public NetManager Listener { get; }
+    public NetManager Manager { get; }
     public Dictionary<NetPeer, Client> Clients { get; }
     public Lobby MainLobby { get; }
 
@@ -33,7 +33,7 @@ public class Server
         listener.NetworkReceiveEvent += OnNetworkReceive;
         listener.NetworkErrorEvent += OnNetworkError;
 
-        Listener = new NetManager(listener);
+        Manager = new NetManager(listener);
 
         Clients = new Dictionary<NetPeer, Client>();
         MainLobby = new Lobby();
@@ -51,13 +51,13 @@ public class Server
         Console.WriteLine("Starting Server...");
         Port = port;
         ConnectionKey = connectionKey;
-        Listener.Start(IPAddress.Any, IPAddress.IPv6Any, port);
+        Manager.Start(IPAddress.Any, IPAddress.IPv6Any, port);
         running = true;
         Console.WriteLine("Server Started, waiting for connections...");
 
         while (running && (Console.IsOutputRedirected || !Console.KeyAvailable))
         {
-            Listener.PollEvents();
+            Manager.PollEvents();
             Thread.Sleep(POLL_RATE);
         }
 
@@ -72,8 +72,8 @@ public class Server
     public void Close()
     {
         Console.WriteLine("Closing Server...");
-        Listener.DisconnectAll();
-        Listener.Stop();
+        Manager.DisconnectAll();
+        Manager.Stop();
     }
 
     public void OnConnectionRequest(ConnectionRequest request)
@@ -166,11 +166,11 @@ public class Server
         {
             if (packet.ReadShort() == -1)
             {
-                Console.WriteLine("Sending Command Packet to " + client.RemoteEP.ToString() + " of type " + (ServiceSendType)packet.ReadShort(false));
+                Console.WriteLine("Sending Command Packet to " + client.RemotePeer.ToString() + " of type " + (ServiceSendType)packet.ReadShort(false));
                 packet.CurrentIndex -= 2;
             }
 
-            client.RemoteEP.Send(packet.ByteArray, method);
+            client.RemotePeer.Send(packet.ByteArray, method);
         }
         catch (SocketException e)
         {
