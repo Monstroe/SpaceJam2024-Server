@@ -395,7 +395,8 @@ namespace CNet
                                     throw new Exception("Failed to add NetEndPoint to connectionsUDP");
                                 }
 
-                                Console.WriteLine("Accepted connection from " + connectionsUDP[remoteEP.UDPEndPoint].TCPEndPoint.ToString());
+                                Console.WriteLine("Accepted connection from " + connectionsUDP[remoteEP.UDPEndPoint].UDPEndPoint.ToString());
+                                Console.WriteLine("Accepted connection 2 from " + remoteEP.UDPEndPoint);
 
                                 beginReceiveQueue.Enqueue(remoteEP);
                                 ConnectOnMainThread(remoteEP);
