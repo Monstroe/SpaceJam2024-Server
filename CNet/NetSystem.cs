@@ -881,6 +881,7 @@ namespace CNet
                 {
                     continue;
                 }
+                Console.WriteLine("Receiving UDP packets 3");
 
                 // If the received data is from a currently connected end point
                 if (connectionsUDP.TryGetValue((IPEndPoint)remoteEndPoint, out remoteEP))
