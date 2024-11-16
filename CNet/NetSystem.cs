@@ -465,6 +465,7 @@ namespace CNet
                 int connectionID = GenerateConnectionID();
                 packet.Write(connectionID);
                 remoteEP.connectionID = connectionID;
+                Console.WriteLine("Connection ID: " + connectionID);
                 SendOnMainThread(remoteEP, packet, PacketProtocol.TCP, true);
             }
         }
