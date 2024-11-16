@@ -875,9 +875,7 @@ namespace CNet
             while (!mainCancelTokenSource.IsCancellationRequested)
             {
                 EndPoint remoteEndPoint = new IPEndPoint(IPAddress.Any, 0);
-                Console.WriteLine("Receiving UDP packets");
                 var receivedBytes = udpSocket.ReceiveFrom(buffer, 0, buffer.Length, SocketFlags.None, ref remoteEndPoint);
-                Console.WriteLine("Receiving UDP packets 2");
                 // Disregard packet as it is too small
                 if (receivedBytes < 4)
                 {
@@ -887,6 +885,7 @@ namespace CNet
                 // If the received data is from a currently connected end point
                 if (connectionsUDP.TryGetValue((IPEndPoint)remoteEndPoint, out remoteEP))
                 {
+                    Console.WriteLine("Receiving UDP packets 4");
                     int expectedLength = receivedPacket.ReadInt();
 
                     // Packets expected length was larger than the actual amount of bytes received
