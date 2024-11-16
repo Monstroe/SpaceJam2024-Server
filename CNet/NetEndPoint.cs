@@ -43,6 +43,7 @@ namespace CNet
             get { return UDPEndPoint.Port; }
         }
 
+        internal int connectionID = -1;
         internal Socket tcpSocket;
         internal CancellationTokenSource tcpCancelTokenSource;
         internal float tcpConnectionTimeoutTime; // seconds
